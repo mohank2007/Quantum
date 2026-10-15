@@ -31,6 +31,7 @@ async def get_current_user(
     if not user_id:
         raise AuthenticationError("Token payload missing subject identifier.")
 
+    await ensure_db()
     user_repo = UserRepository()
     user = await user_repo.get_by_id(user_id)
     if not user:
@@ -54,24 +55,36 @@ def require_role(required_role: str) -> Callable:
     return role_checker
 
 
+async def ensure_db():
+    """Ensure database connection and Beanie ODM models are initialized before servicing queries."""
+    from app.main import init_db, _beanie_initialized
+    if not _beanie_initialized:
+        await init_db()
+
+
 # Service factories for dependency injection
-def get_auth_service() -> AuthService:
+async def get_auth_service() -> AuthService:
+    await ensure_db()
     return AuthService(UserRepository())
 
 
-def get_user_service() -> UserService:
+async def get_user_service() -> UserService:
+    await ensure_db()
     return UserService(UserRepository())
 
 
-def get_dataset_service() -> DatasetService:
+async def get_dataset_service() -> DatasetService:
+    await ensure_db()
     return DatasetService(DatasetRepository())
 
 
-def get_model_service() -> ModelService:
+async def get_model_service() -> ModelService:
+    await ensure_db()
     return ModelService(ModelRepository())
 
 
-def get_training_service() -> TrainingService:
+async def get_training_service() -> TrainingService:
+    await ensure_db()
     return TrainingService(
         training_repo=TrainingRepository(),
         model_repo=ModelRepository(),
@@ -79,7 +92,8 @@ def get_training_service() -> TrainingService:
     )
 
 
-def get_experiment_service() -> ExperimentService:
+async def get_experiment_service() -> ExperimentService:
+    await ensure_db()
     return ExperimentService(
         experiment_repo=ExperimentRepository(),
         training_repo=TrainingRepository(),

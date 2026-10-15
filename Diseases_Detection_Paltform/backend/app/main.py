@@ -13,6 +13,38 @@ from app.database.session import get_db_client
 from app.database.models import __all__ as all_models_names
 import importlib
 
+_beanie_initialized = False
+
+
+async def init_db() -> bool:
+    """Initialize MongoDB client, Beanie document models, and seed default datasets."""
+    global _beanie_initialized
+    if _beanie_initialized:
+        return True
+
+    try:
+        client = get_db_client()
+        db = client[settings.MONGODB_DB]
+        models_module = importlib.import_module("app.database.models")
+        document_models = [getattr(models_module, model_name) for model_name in all_models_names]
+        
+        await init_beanie(database=db, document_models=document_models)
+        _beanie_initialized = True
+        logger.info("MongoDB and Beanie ODM initialized successfully.")
+        
+        # Seed bundled default datasets (idempotent — safe to call every startup)
+        try:
+            from app.core.dataset_seeder import seed_default_datasets
+            await seed_default_datasets()
+        except Exception as seed_err:
+            logger.warning(f"Default dataset seeding (non-fatal): {seed_err}")
+            
+        return True
+    except Exception as mongo_err:
+        logger.warning(f"MongoDB/Beanie initialization deferred (verify MONGODB_URL): {mongo_err}")
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context for startup and shutdown procedures."""
@@ -22,30 +54,14 @@ async def lifespan(app: FastAPI):
     )
     
     # Initialize MongoDB/Beanie
-    client = get_db_client()
-    db = client[settings.MONGODB_DB]
-    
-    # Load all models dynamically from app.database.models
-    models_module = importlib.import_module("app.database.models")
-    document_models = [getattr(models_module, model_name) for model_name in all_models_names]
-    
-    try:
-        await init_beanie(database=db, document_models=document_models)
-        logger.info("MongoDB and Beanie ODM initialized successfully.")
-        
-        # Seed bundled default datasets (idempotent — safe to call every startup)
-        try:
-            from app.core.dataset_seeder import seed_default_datasets
-            await seed_default_datasets()
-        except Exception as seed_err:
-            logger.warning(f"Default dataset seeding failed (non-fatal): {seed_err}")
-    except Exception as mongo_err:
-        logger.warning(f"MongoDB/Beanie initialization deferred (verify MONGODB_URL): {mongo_err}")
+    await init_db()
 
     yield
 
     logger.info("Shutting down application and closing MongoDB client.")
-    client.close()
+    client = get_db_client()
+    if client:
+        client.close()
 
 
 app = FastAPI(
