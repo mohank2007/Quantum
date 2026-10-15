@@ -5,8 +5,8 @@ services:
     env: docker
     plan: free
     rootDir: Diseases_Detection_Paltform/backend
-    # Optional: explicitly tell Render where the Dockerfile is relative to rootDir
     dockerfilePath: Dockerfile
+    healthCheckPath: /api/v1/health
     envVars:
       - key: PORT
         value: 8000
@@ -31,6 +31,7 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://disease-detection-backend-asag.onrender.com/api/v1
+        value: https://disease-detection-backend.onrender.com/api/v1
+        sync: false
       - key: NODE_VERSION
         value: 20

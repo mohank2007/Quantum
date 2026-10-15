@@ -27,5 +27,5 @@ RUN mkdir -p /app/artifacts
 
 EXPOSE 8000
 
-# Default command starts Uvicorn server with health check ready
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command starts Uvicorn server with dynamic port support (Render/Docker)
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

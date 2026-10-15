@@ -29,15 +29,18 @@ async def lifespan(app: FastAPI):
     models_module = importlib.import_module("app.database.models")
     document_models = [getattr(models_module, model_name) for model_name in all_models_names]
     
-    await init_beanie(database=db, document_models=document_models)
-    logger.info("MongoDB and Beanie ODM initialized successfully.")
-
-    # Seed bundled default datasets (idempotent — safe to call every startup)
     try:
-        from app.core.dataset_seeder import seed_default_datasets
-        await seed_default_datasets()
-    except Exception as seed_err:
-        logger.warning(f"Default dataset seeding failed (non-fatal): {seed_err}")
+        await init_beanie(database=db, document_models=document_models)
+        logger.info("MongoDB and Beanie ODM initialized successfully.")
+        
+        # Seed bundled default datasets (idempotent — safe to call every startup)
+        try:
+            from app.core.dataset_seeder import seed_default_datasets
+            await seed_default_datasets()
+        except Exception as seed_err:
+            logger.warning(f"Default dataset seeding failed (non-fatal): {seed_err}")
+    except Exception as mongo_err:
+        logger.warning(f"MongoDB/Beanie initialization deferred (verify MONGODB_URL): {mongo_err}")
 
     yield
 
@@ -60,13 +63,23 @@ app = FastAPI(
 )
 
 # Configure Cross-Origin Resource Sharing (CORS)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+cors_origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+if "*" in cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.exception_handler(AppException)
@@ -102,3 +115,23 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # Mount main API v1 router
 app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)
+
+
+@app.get("/", tags=["Root"])
+async def root():
+    """Root endpoint for cloud uptime checks and service information."""
+    return {
+        "status": "online",
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "docs": f"{settings.API_V1_PREFIX}/docs",
+        "health": f"{settings.API_V1_PREFIX}/health",
+    }
+
+
+@app.get("/health", tags=["Root"])
+@app.get("/healthz", tags=["Root"])
+async def root_health_alias():
+    """Alias for /api/v1/health commonly checked by cloud platforms."""
+    from app.api.v1.health import health_check
+    return await health_check()

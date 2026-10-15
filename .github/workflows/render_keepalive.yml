@@ -1,0 +1,33 @@
+name: Render Backend 24-7 Keep-Alive
+
+on:
+  schedule:
+    # Runs every 14 minutes to prevent Render free-tier instances from spinning down (15-minute inactivity limit)
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: 'Render backend URL to ping'
+        required: false
+        default: ''
+
+jobs:
+  ping-backend:
+    name: Ping Health Endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Keep-Alive Request
+        run: |
+          BACKEND_URL="${{ github.event.inputs.backend_url || secrets.RENDER_BACKEND_URL || vars.RENDER_BACKEND_URL || 'https://disease-detection-backend.onrender.com' }}"
+          # Strip trailing slash if present
+          BACKEND_URL="${BACKEND_URL%/}"
+          
+          echo "Sending keep-alive ping to: ${BACKEND_URL}/api/v1/health"
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 "${BACKEND_URL}/api/v1/health" || echo "000")
+          
+          echo "HTTP Status Code: ${RESPONSE_CODE}"
+          if [ "${RESPONSE_CODE}" = "200" ]; then
+            echo "Backend is alive and responding normally."
+          else
+            echo "Notice: Endpoint returned ${RESPONSE_CODE} (service may be initialising or warming up)."
+          fi

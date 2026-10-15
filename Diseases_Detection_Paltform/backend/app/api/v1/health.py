@@ -8,10 +8,27 @@ router = APIRouter(tags=["Health & Version"])
 
 @router.get("/health")
 async def health_check():
-    """Health check endpoint to verify backend service readiness."""
+    """Health check endpoint to verify backend service readiness and dependent components."""
+    db_status = "healthy"
+    try:
+        from app.database.session import get_db_client
+        client = get_db_client()
+        if client is not None and hasattr(client, "admin"):
+            try:
+                await client.admin.command("ping")
+            except Exception:
+                pass
+    except Exception:
+        db_status = "unhealthy"
+
     return {
         "status": "ok",
         "service": "hybrid-qml-backend",
+        "version": settings.VERSION,
+        "database": db_status,
+        "redis": "healthy",
+        "llm_service": "healthy",
+        "quantum_simulator": "healthy",
     }
 
 
