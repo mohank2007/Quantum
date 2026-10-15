@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+Diseases_Detection_Paltform/frontend
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+.pytest_cache
+.idea
+.vscode
