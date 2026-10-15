@@ -133,21 +133,63 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)
 
 
-@app.get("/", tags=["Root"])
-async def root():
-    """Root endpoint for cloud uptime checks and service information."""
-    return {
-        "status": "online",
-        "service": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-        "docs": f"{settings.API_V1_PREFIX}/docs",
-        "health": f"{settings.API_V1_PREFIX}/health",
-    }
-
-
 @app.get("/health", tags=["Root"])
 @app.get("/healthz", tags=["Root"])
 async def root_health_alias():
     """Alias for /api/v1/health commonly checked by cloud platforms."""
     from app.api.v1.health import health_check
     return await health_check()
+
+
+# Check for bundled frontend production build
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+FRONTEND_DIST = os.environ.get("FRONTEND_DIST")
+if not FRONTEND_DIST or not os.path.exists(FRONTEND_DIST):
+    candidate_paths = [
+        "/app/frontend_dist",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "frontend", "dist"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend_dist"),
+    ]
+    for p in candidate_paths:
+        if os.path.exists(p) and os.path.isfile(os.path.join(p, "index.html")):
+            FRONTEND_DIST = p
+            break
+
+if FRONTEND_DIST and os.path.exists(FRONTEND_DIST):
+    logger.info(f"Serving integrated Single Page Application frontend from: {FRONTEND_DIST}")
+    
+    # Mount assets directory
+    assets_dir = os.path.join(FRONTEND_DIST, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend_assets")
+
+    # Serve SPA routes and static assets
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        # Don't intercept API v1 or documentation endpoints
+        if full_path.startswith("api/") or full_path == "api" or full_path.startswith("docs") or full_path.startswith("openapi"):
+            return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND", "message": "API endpoint not found"}})
+            
+        target_file = os.path.join(FRONTEND_DIST, full_path)
+        if full_path and os.path.isfile(target_file):
+            return FileResponse(target_file)
+            
+        index_file = os.path.join(FRONTEND_DIST, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+            
+        return JSONResponse(status_code=404, content={"error": "index.html not found"})
+else:
+    @app.get("/", tags=["Root"])
+    async def root():
+        """Root endpoint fallback when frontend is not built into container."""
+        return {
+            "status": "online",
+            "service": settings.PROJECT_NAME,
+            "version": settings.VERSION,
+            "docs": f"{settings.API_V1_PREFIX}/docs",
+            "health": f"{settings.API_V1_PREFIX}/health",
+        }

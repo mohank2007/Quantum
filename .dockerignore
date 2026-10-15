@@ -1,7 +1,9 @@
 .git
 .github
 node_modules
-Diseases_Detection_Paltform/frontend
+**/node_modules
+Diseases_Detection_Paltform/frontend/node_modules
+Diseases_Detection_Paltform/frontend/dist
 __pycache__
 *.pyc
 *.pyo
